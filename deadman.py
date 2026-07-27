@@ -279,7 +279,7 @@ def configure_payload(state):
         recipient = ask("Recipient email address")
         if not recipient:
             print("  Cancelled."); return
-        subject = ask("Subject", "Message from Annika (automated dead-man's switch)")
+        subject = ask("Subject", "Automated check-in alert (dead-man's switch)")
         print("  Message body (finish with a single '.' on its own line):")
         lines = []
         while True:
