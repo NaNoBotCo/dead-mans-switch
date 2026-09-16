@@ -24,3 +24,4 @@ build/
 store/
 crawler/store/
 cache/
+state.json

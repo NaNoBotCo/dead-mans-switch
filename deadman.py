@@ -14,6 +14,8 @@ import json
 import os
 import subprocess
 import sys
+import urllib.request
+import urllib.error
 
 HOME = os.environ.get("DEADMAN_HOME") or os.path.dirname(os.path.abspath(__file__))
 STATE_PATH = os.path.join(HOME, "state.json")
@@ -28,6 +30,11 @@ DEFAULT_STATE = {
     "warn_days": 2,
     "last_checkin": None,
     "last_warn": None,
+    "warn_email": None,   # optional: also email warnings here (set in state.json)
+    # optional: a remote inbox the checker polls for check-ins sent from a phone.
+    # {"url": "https://…", "token_path": "~/.config/…", "door": "checkin",
+    #  "senders": ["you@example.com"]} — only mail from `senders` counts.
+    "remote_checkin": None,
     "payload": {"type": "none"},
 }
 
@@ -69,6 +76,31 @@ def now():
 
 def parse_ts(s):
     return dt.datetime.fromisoformat(s) if s else None
+
+
+def parse_remote_ts(s):
+    """ISO-8601 from a server (may end in 'Z', may carry an offset) → naive local
+    time, so it compares with last_checkin. Python 3.9 safe. None on failure."""
+    if not s:
+        return None
+    try:
+        s = s.strip()
+        if s.endswith("Z"):
+            s = s[:-1] + "+00:00"
+        if "." in s:  # drop fractional seconds; 3.9 wants exactly 0 or 6 digits
+            head, tail = s.split(".", 1)
+            off = ""
+            for i, ch in enumerate(tail):
+                if ch in "+-":
+                    off = tail[i:]
+                    break
+            s = head + off
+        t = dt.datetime.fromisoformat(s)
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=dt.timezone.utc)
+        return t.astimezone().replace(tzinfo=None)
+    except (ValueError, TypeError):
+        return None
 
 
 def fmt_ts(t):
@@ -140,6 +172,59 @@ def fire_payload(state, test=False):
     return "no payload configured — nothing fired"
 
 
+# ---------------------------------------------------------------- remote check-in
+
+def poll_remote_checkin(state):
+    """If a remote inbox is configured, treat a fresh email from an allowed
+    sender as a check-in. Quiet on any failure: no network, no token, no mail —
+    the switch simply behaves as if the phone had said nothing."""
+    rc = state.get("remote_checkin") or {}
+    url, door = rc.get("url"), rc.get("door")
+    senders = [x.lower() for x in rc.get("senders") or []]
+    if not (url and door and senders):
+        return False
+    try:
+        with open(os.path.expanduser(rc.get("token_path", ""))) as f:
+            tok = f.read().strip()
+        req = urllib.request.Request(url.rstrip("/") + "/list")
+        req.add_header("Authorization", "Bearer " + tok)
+        req.add_header("User-Agent", "Mozilla/5.0 (deadman.py)")
+        with urllib.request.urlopen(req, timeout=20) as r:
+            mail = json.loads(r.read()).get("mail", [])
+    except Exception as e:
+        log("remote check-in poll failed: %s" % e)
+        return False
+    last = parse_ts(state.get("last_checkin"))
+    newest, hits = None, []
+    for m in mail:
+        if (m.get("door") or "") != door:
+            continue
+        frm = (m.get("from_addr") or "").lower()
+        if not any(frm == s_ or frm.endswith("<" + s_ + ">") or s_ in frm for s_ in senders):
+            continue
+        t = parse_remote_ts(m.get("ts"))
+        if t is None:
+            continue
+        hits.append(m)
+        if newest is None or t > newest[0]:
+            newest = (t, frm)
+    for m in hits:  # mark them handled so the inbox menu stays clean
+        try:
+            req = urllib.request.Request(url.rstrip("/") + "/handled/" + m["id"], method="POST")
+            req.add_header("Authorization", "Bearer " + tok)
+            req.add_header("User-Agent", "Mozilla/5.0 (deadman.py)")
+            urllib.request.urlopen(req, timeout=20).read()
+        except Exception:
+            pass
+    if newest and (last is None or newest[0] > last):
+        state["last_checkin"] = newest[0].isoformat()
+        state["last_warn"] = None
+        save_state(state)
+        log("check-in by email from %s (%s)" % (newest[1], fmt_ts(newest[0])))
+        return True
+    return False
+
+
 # ---------------------------------------------------------------- checker
 
 def run_check():
@@ -147,6 +232,8 @@ def run_check():
     state = load_state()
     if not state["armed"] or state["fired"]:
         return
+    if poll_remote_checkin(state):
+        state = load_state()
     deadline = deadline_of(state)
     if deadline is None:
         return
@@ -172,9 +259,18 @@ def run_check():
         if last_warn is None or (t - last_warn) >= dt.timedelta(hours=WARN_EVERY_HOURS):
             remaining = deadline - t
             hours = int(remaining.total_seconds() // 3600)
-            notify("Dead-man's switch — check in soon",
-                   "About %dh %dm left. Open Dead Mans Switch on the Desktop and press 1."
-                   % (hours, int(remaining.total_seconds() % 3600 // 60)))
+            title = "Dead-man's switch — check in soon"
+            text = ("About %dh %dm left. Open Dead Mans Switch on the Desktop and press 1."
+                    % (hours, int(remaining.total_seconds() % 3600 // 60)))
+            notify(title, text)
+            # Optional: the same warning by email, so a phone sees it when the Mac's
+            # screen is not being looked at. A mail failure never blocks the warning.
+            warn_email = state.get("warn_email")
+            if warn_email:
+                try:
+                    send_mail(warn_email, title, text)
+                except Exception as e:
+                    log("warn email failed: %s" % e)
             state["last_warn"] = t.isoformat()
             save_state(state)
             log("warned: %dh remaining" % hours)
