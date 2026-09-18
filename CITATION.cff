@@ -1,0 +1,14 @@
+cff-version: 1.2.0
+message: "If you use this work, cite it as below."
+title: "Local, offline check-in switch"
+abstract: "Local, offline check-in switch — fires a payload once if you ever stop checking in"
+type: software
+authors:
+  - name: "NaN"
+    website: "https://github.com/NaNoBotCo"
+repository-code: "https://github.com/NaNoBotCo/dead-mans-switch"
+url: "https://nanobotco.github.io/dead-mans-switch/"
+license:
+  - CC-BY-SA-4.0
+  - AGPL-3.0-or-later
+date-released: "2026-09-18"
