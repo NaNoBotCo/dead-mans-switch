@@ -44,12 +44,13 @@ and disarms. If firing fails (e.g. Mail unavailable) it retries hourly.
 
 ## Licence
 
-Records, prose and pages: CC BY-SA 4.0. Code: AGPL-3.0-or-later. Anything
-carried in from elsewhere keeps its own terms — see [LICENSE](LICENSE) and [NOTICE.txt](NOTICE.txt).
+Records, prose and pages: CC BY 4.0. Code: MIT. Attribution is the only
+condition — name the work and link back. Anything carried in from elsewhere
+keeps its own terms — see [LICENSE](LICENSE) and [NOTICE.txt](NOTICE.txt).
 
-**Commercial licence.** If share-alike doesn't fit your use — a corpus, a
-product, a model — a commercial licence is available.
-[Open an issue](https://github.com/NaNoBotCo/dead-mans-switch/issues) and say what you need.
+**Using it.** Attribution is the whole of the condition — copy it, adapt it,
+sell it, index it, train on it, and say where it came from.
+[Open an issue](https://github.com/NaNoBotCo/dead-mans-switch/issues) if something is missing.
 
 ---
 
